@@ -42,8 +42,16 @@ import {
   addDataToMap,
   replaceDataInMap,
   toggleMapControl,
-  toggleModal
+  toggleModal,
+  updateVisData
 } from '@kepler.gl/actions';
+import {
+  getMetaUrl,
+  parseVectorMetadata,
+  getFieldsFromTile
+} from '@kepler.gl/table';
+import {isPMTilesUrl} from '@kepler.gl/common-utils';
+import {RemoteTileFormat} from '@kepler.gl/constants';
 import {CLOUD_PROVIDERS} from './cloud-providers';
 import {Panel, PanelGroup, PanelResizeHandle} from 'react-resizable-panels';
 
@@ -280,325 +288,112 @@ const App = props => {
   }, [dispatch]);
 
   const _loadVectorTileData = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: [
+    const loadVectorTileDataset = async (tilesetUrl, datasetName) => {
+      console.log(`[${datasetName}] Starting to load dataset...`);
+      const isPmTiles = isPMTilesUrl(tilesetUrl);
+      const remoteTileFormat = isPmTiles ? RemoteTileFormat.PMTILES : RemoteTileFormat.MVT;
+      const metadataUrl = isPmTiles ? tilesetUrl : getMetaUrl(tilesetUrl);
+
+      if (!metadataUrl) {
+        console.error(`[${datasetName}] Could not determine metadata URL for`, tilesetUrl);
+        return;
+      }
+
+      try {
+        // 1. Fetch and parse metadata
+        console.log(`[${datasetName}] Fetching metadata from: ${metadataUrl}`);
+        const response = await fetch(metadataUrl);
+        const metadata = await response.json();
+        console.log(`[${datasetName}] Metadata received:`, metadata);
+
+        if (typeof metadata.json === 'string') {
+          console.log(`[${datasetName}] Parsing metadata.json string...`);
+          metadata.json = JSON.parse(metadata.json);
+        }
+
+        // Workaround for Kepler.gl bug where it expects `metaJson` instead of `json`
+        if (metadata.json && !metadata.metaJson) {
+          console.log(`[${datasetName}] Applying workaround for metaJson property...`);
+          metadata.metaJson = metadata.json;
+        }
+
+        const parsedMetadata = parseVectorMetadata(metadata, {
+          tileUrl: metadataUrl
+        });
+
+        if (!parsedMetadata) {
+          console.error(`[${datasetName}] Failed to parse metadata.`);
+          return;
+        }
+        console.log(`[${datasetName}] Metadata parsed successfully.`);
+
+        // 2. Infer fields if necessary
+        if (parsedMetadata.fields.length === 0) {
+          console.log(`[${datasetName}] Fields not found in metadata, attempting to infer from tile...`);
+          try {
+            await getFieldsFromTile({
+              remoteTileFormat,
+              tilesetUrl,
+              metadataUrl,
+              metadata: parsedMetadata
+            });
+            console.log(`[${datasetName}] Fields inferred successfully:`, parsedMetadata.fields);
+          } catch (e) {
+            console.error(`[${datasetName}] Error inferring fields from tile:`, e);
+          }
+        }
+
+        if (parsedMetadata.fields.length === 0) {
+          console.error(`[${datasetName}] Could not determine fields for this dataset. Cannot add to map.`);
+          return;
+        }
+
+        // 3. Prepare dataset and layer configuration
+        console.log(`[${datasetName}] Adding dataset to map...`);
+        dispatch(updateVisData(
           {
             info: {
-              label: 'Railroads',
-              id: 'railroads.pmtiles',
-              color: [255, 0, 0],
-              type: 'vector-tile'
+              id: datasetName,
+              label: datasetName,
+              type: 'vector-tile',
+              format: 'rows'
             },
             data: {
-              rows: [],
-              fields: [
-                {
-                  name: 'continent',
-                  type: 'string',
-                  format: '',
-                  analyzerType: 'STRING'
-                }
-              ]
+              fields: parsedMetadata.fields,
+              rows: []
             },
             metadata: {
-              name: 'output.pmtiles',
-              description: 'output.pmtiles',
-              type: 'remote',
-              remoteTileFormat: 'pmtiles',
-              tilesetDataUrl:
-                'https://4sq-studio-public.s3.us-west-2.amazonaws.com/pmtiles-test/161727fe-7952-4e57-aa05-850b3086b0b2.pmtiles',
-              tilesetMetadataUrl:
-                'https://4sq-studio-public.s3.us-west-2.amazonaws.com/pmtiles-test/161727fe-7952-4e57-aa05-850b3086b0b2.pmtiles',
-              id: 'sz6uy1xtj',
-              format: 'rows',
-              label: 'output.pmtiles',
-              metaJson: null,
-              bounds: [-150.1122219, -51.8952777, 179.3577783, 69.6043747],
-              center: [14.0625, 50.7026397, 6],
-              maxZoom: 6,
-              minZoom: 0,
-              fields: [
-                {
-                  name: 'continent',
-                  id: 'continent',
-                  format: '',
-                  filterProps: {
-                    domain: [
-                      'Africa',
-                      'Asia',
-                      'Europe',
-                      'North America',
-                      'Oceania',
-                      'South America'
-                    ],
-                    value: [],
-                    type: 'multiSelect',
-                    gpu: false
-                  },
-                  type: 'string',
-                  analyzerType: 'STRING'
-                }
-              ]
-            }
-          }
-        ],
-        options: {
-          autoCreateLayers: true
-        }
-      })
-    );
-  }, [dispatch]);
-
-  const _loadPointData = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {
-              label: 'Sample Taxi Trips 1',
-              id: 'test_trip_data',
-              color: [255, 0, 0]
+              ...parsedMetadata,
+              remoteTileFormat,
+              tilesetDataUrl: tilesetUrl,
+              tilesetMetadataUrl: metadataUrl,
             },
-            data: {
-              rows: sampleTripData.rows.slice(0, 20),
-              fields: cloneDeep(sampleTripData.fields)
-            }
+            supportedFilterTypes: [
+              'real',
+              'integer',
+              'boolean'
+            ],
+            disableDataOperation: true
           },
           {
-            info: {
-              label: 'Sample Taxi Trips 2',
-              id: 'test_trip_data_2',
-              color: [0, 255, 0]
-            },
-            data: {
-              rows: sampleTripData.rows.slice(5, sampleTripData.rows.length),
-              fields: cloneDeep(sampleTripData.fields)
-            }
+            autoCreateLayers: true,
+            centerMap: true
           }
-        ],
-        options: {
-          // centerMap: true,
-          keepExistingConfig: true
-        },
-        config: sampleTripDataConfig
-      })
-    );
-  }, [dispatch]);
+        ));
 
-  const _loadScenegraphLayer = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: {
-          info: {
-            label: 'Sample Scenegraph Ducks',
-            id: 'test_trip_data'
-          },
-          data: processCsvData(testCsvData)
-        },
-        config: {
-          version: 'v1',
-          config: {
-            visState: {
-              layers: [
-                {
-                  type: '3D',
-                  config: {
-                    dataId: 'test_trip_data',
-                    columns: {
-                      lat: 'gps_data.lat',
-                      lng: 'gps_data.lng'
-                    },
-                    isVisible: true
-                  }
-                }
-              ]
-            }
-          }
-        }
-      })
-    );
-  }, [dispatch]);
 
-  const _loadIconData = useCallback(() => {
-    // load icon data and config and process csv file
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {
-              label: 'Icon Data',
-              id: 'test_icon_data'
-            },
-            data: processCsvData(sampleIconCsv)
-          }
-        ]
-      })
-    );
-  }, [dispatch]);
+      } catch (error) {
+        console.error(`[${datasetName}] Failed to load dataset:`, error);
+      }
+    }
 
-  const _loadTripGeoJson = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {label: 'Trip animation', id: animateTripDataId},
-            data: processGeojson(sampleAnimateTrip)
-          }
-        ]
-      })
-    );
-  }, [dispatch]);
-
-  const _loadGeojsonData = useCallback(() => {
-    // load geojson
-    const geojsonPoints = processGeojson(sampleGeojsonPoints);
-    const geojsonZip = null; // processGeojson(sampleGeojson);
-    dispatch(
-      addDataToMap({
-        datasets: [
-          geojsonPoints
-            ? {
-                info: {label: 'Bart Stops Geo', id: 'bart-stops-geo'},
-                data: geojsonPoints
-              }
-            : null,
-          geojsonZip
-            ? {
-                info: {label: 'SF Zip Geo', id: 'sf-zip-geo'},
-                data: geojsonZip
-              }
-            : null
-        ].filter(d => d !== null),
-        options: {
-          keepExistingConfig: true
-        },
-        config: sampleGeojsonConfig as ParsedConfig
-      })
-    );
-  }, [dispatch]);
-
-  const _loadSyncedFilterWTripLayer = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {label: 'Trip animation', id: animateTripDataId},
-            data: processGeojson(sampleAnimateTrip)
-          },
-          {
-            info: {
-              label: 'Sample Taxi Trips',
-              id: pointDataId,
-              color: [255, 0, 0]
-            },
-            data: pointData
-          }
-        ],
-        config: syncedTripConfig,
-        options: {
-          centerMap: true
-        }
-      })
-    );
-  }, [dispatch]);
-
-  const _replaceSyncedFilterWTripLayer = useCallback(() => {
-    window.setTimeout(() => {
-      dispatch(
-        replaceDataInMap({
-          datasetToReplaceId: pointDataId,
-          datasetToUse: {
-            info: {label: 'Sample Taxi Trips Replaced', id: `${pointDataId}-2`},
-            data: replacePointData
-          }
-        })
-      );
-    }, 1000);
-  }, [dispatch]);
-
-  const _replaceData = useCallback(() => {
-    // add geojson data
-    const sliceData = processGeojson({
-      type: 'FeatureCollection',
-      features: sampleGeojsonPoints.features.slice(0, 5)
-    });
-    _loadGeojsonData();
-    Window.setTimeout(() => {
-      dispatch(
-        replaceDataInMap({
-          datasetToReplaceId: 'bart-stops-geo',
-          datasetToUse: {
-            info: {label: 'Bart Stops Geo Replaced', id: 'bart-stops-geo-2'},
-            data: sliceData
-          }
-        })
-      );
-    }, 1000);
-  }, [dispatch, _loadGeojsonData]);
-
-  const _loadH3HexagonData = useCallback(() => {
-    // load h3 hexagon
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {
-              label: 'H3 Hexagons V2',
-              id: 'h3-hex-id'
-            },
-            data: processCsvData(sampleH3Data)
-          }
-        ],
-        config: h3MapConfig,
-        options: {
-          keepExistingConfig: true
-        }
-      })
-    );
-  }, [dispatch]);
-
-  const _loadS2Data = useCallback(() => {
-    // load s2
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {
-              label: 'S2 Data',
-              id: s2DataId
-            },
-            data: processCsvData(sampleS2Data)
-          }
-        ],
-        config: s2MapConfig as ParsedConfig,
-        options: {
-          keepExistingConfig: true
-        }
-      })
-    );
-  }, [dispatch]);
-
-  const _loadGpsData = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {
-              label: 'Gps Data',
-              id: 'gps-data'
-            },
-            data: processCsvData(sampleGpsData)
-          }
-        ],
-        options: {
-          keepExistingConfig: true
-        }
-      })
-    );
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ukrdailyupdate/{z}/{x}/{y}.pbf', 'Ukraine');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/MeshMap/{z}/{x}/{y}.pbf', 'Meshtastic');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/WRI%20Global%20Power%20Plants/{z}/{x}/{y}.pbf', 'Power Plants');
   }, [dispatch]);
 
   const _loadSampleData = useCallback(() => {
+    _loadVectorTileData();
     // _loadPointData();
     // _loadGeojsonData();
     // _loadTripGeoJson();
@@ -613,19 +408,8 @@ const App = props => {
     // _replaceSyncedFilterWTripLayer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    _loadPointData,
-    _loadGeojsonData,
-    _loadTripGeoJson,
-    _loadIconData,
-    _loadH3HexagonData,
-    _loadS2Data,
-    _loadScenegraphLayer,
-    _loadGpsData,
-    _loadRowData,
-    _replaceData,
-    _loadVectorTileData,
-    _loadSyncedFilterWTripLayer,
-    _replaceSyncedFilterWTripLayer
+    dispatch,
+    _loadVectorTileData
   ]);
 
   return (
