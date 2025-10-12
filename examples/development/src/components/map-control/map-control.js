@@ -100,62 +100,6 @@ function getURL(url) {
     : url;
 }
 
-export function SampleMapPanel(props) {
-  const [isActive, setActive] = useState(true);
-
-  return (
-    <StyledFloatingPanel>
-      {isActive ? (
-        <StyledProjectPanel>
-          <div className="project-title">
-            <div>{props.currentSample.label}</div>
-            <CloseButton onClick={() => setActive(false)} />
-          </div>
-          <div className="project-description">
-            <Markdown
-              options={{
-                overrides: {
-                  a: {
-                    component: LinkRenderer
-                  }
-                }
-              }}
-            >
-              {props.currentSample.detail || props.currentSample.description}
-            </Markdown>
-          </div>
-          <div className="project-links">
-            <LinkButton
-              label="Data"
-              href={getURL(
-                props.currentSample.dataUrl || props.currentSample.remoteDatasetConfigUrl
-              )}
-              iconComponent={Icons.Files}
-              height="15px"
-            />
-            <LinkButton
-              label="Config"
-              href={getURL(props.currentSample.configUrl)}
-              iconComponent={Icons.CodeAlt}
-              height="17px"
-            />
-          </div>
-        </StyledProjectPanel>
-      ) : (
-        <MapControlButton
-          className={classnames('map-control-button', 'info-panel', {isActive})}
-          onClick={e => {
-            e.preventDefault();
-            setActive(true);
-          }}
-        >
-          <Icons.Docs height="18px" />
-        </MapControlButton>
-      )}
-    </StyledFloatingPanel>
-  );
-}
-
 export function BannerMapPanel() {
   const [isActive, setActive] = useState(true);
   // Once the banner is closed, the user won't see the banner during next sessions.
@@ -174,7 +118,7 @@ export function BannerMapPanel() {
       {isActive ? (
         <StyledProjectPanel>
           <div className="project-title">
-            <div>{'Kepler.gl 3.1 + DuckDB is here!'}</div>
+            <div>{'OSINT "GOTHAM"'}</div>
 
             <CloseButton
               onClick={() => {
@@ -194,7 +138,7 @@ export function BannerMapPanel() {
               }}
             >
               {
-                '[Click here](https://kepler-preview.foursquare.com) to check out the preview of Kepler.gl 3.1 with DuckDB enabled!'
+                '[Request Complete Access](mailto:tacticalgator1@gmail.com) to all 20+ datasets\n  This is an extremely browser-heavy application. Mobile use is NOT recommended. Refreshing the browser will reset all the changes made.\n  Loading all the datasets can take a long time.'
               }
             </Markdown>
           </div>

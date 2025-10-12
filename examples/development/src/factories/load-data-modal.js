@@ -4,10 +4,8 @@
 import {LoadDataModalFactory, withState} from '@kepler.gl/components';
 import {LOADING_METHODS} from '../constants/default-settings';
 
-import SampleMapGallery from '../components/load-data-modal/sample-data-viewer';
 import LoadRemoteMap from '../components/load-data-modal/load-remote-map';
-import SampleMapsTab from '../components/load-data-modal/sample-maps-tab';
-import {loadRemoteMap, loadSample, loadSampleConfigurations} from '../actions';
+import {loadRemoteMap} from '../actions';
 
 const CustomLoadDataModalFactory = (...deps) => {
   const LoadDataModal = LoadDataModalFactory(...deps);
@@ -17,12 +15,6 @@ const CustomLoadDataModalFactory = (...deps) => {
       id: LOADING_METHODS.remote,
       label: 'modal.loadData.remote',
       elementType: LoadRemoteMap
-    },
-    sample: {
-      id: LOADING_METHODS.sample,
-      label: 'modal.loadData.sample',
-      elementType: SampleMapGallery,
-      tabElementType: SampleMapsTab
     }
   };
 
@@ -31,17 +23,14 @@ const CustomLoadDataModalFactory = (...deps) => {
     defaultLoadingMethods.find(lm => lm.id === 'upload'),
     defaultLoadingMethods.find(lm => lm.id === 'tileset'),
     additionalMethods.remote,
-    defaultLoadingMethods.find(lm => lm.id === 'storage'),
-    additionalMethods.sample
+    defaultLoadingMethods.find(lm => lm.id === 'storage')
   ];
 
   return withState(
     [],
     state => ({...state.demo.app, ...state.demo.keplerGl.map.uiState, loadingMethods}),
     {
-      onLoadSample: loadSample,
-      onLoadRemoteMap: loadRemoteMap,
-      loadSampleConfigurations
+      onLoadRemoteMap: loadRemoteMap
     }
   )(LoadDataModal);
 };

@@ -32,27 +32,26 @@ import {messages} from './constants/localization';
 
 import {
   loadRemoteMap,
-  loadSampleConfigurations,
-  onExportFileSuccess,
-  onLoadCloudMapSuccess
 } from './actions';
 
 import {
-  loadCloudMap,
   addDataToMap,
   replaceDataInMap,
   toggleMapControl,
   toggleModal,
-  updateVisData
+  updateVisData,
+  receiveMapConfig
 } from '@kepler.gl/actions';
 import {
   getMetaUrl,
   parseVectorMetadata,
-  getFieldsFromTile
+  getFieldsFromTile,
+  getWMSCapabilities,
+  wmsCapabilitiesToDatasetMetadata
 } from '@kepler.gl/table';
+import KeplerGlSchema from '@kepler.gl/schemas';
 import {isPMTilesUrl} from '@kepler.gl/common-utils';
-import {RemoteTileFormat} from '@kepler.gl/constants';
-import {CLOUD_PROVIDERS} from './cloud-providers';
+import {DatasetType, REMOTE_TILE, RemoteTileFormat} from '@kepler.gl/constants';
 import {Panel, PanelGroup, PanelResizeHandle} from 'react-resizable-panels';
 
 const KeplerGl = require('@kepler.gl/components').injectComponents([
@@ -61,27 +60,18 @@ const KeplerGl = require('@kepler.gl/components').injectComponents([
   replacePanelHeader()
 ]);
 
-// Sample data
 /* eslint-disable no-unused-vars */
-import sampleTripData, {testCsvData, sampleTripDataConfig} from './data/sample-trip-data';
-// import sampleGeojson from './data/sample-small-geojson';
-// import sampleGeojsonPoints from './data/sample-geojson-points';
-import sampleGeojsonConfig from './data/sample-geojson-config';
-import sampleH3Data, {config as h3MapConfig} from './data/sample-hex-id-csv';
-import sampleS2Data, {config as s2MapConfig, dataId as s2DataId} from './data/sample-s2-data';
-import sampleAnimateTrip, {
-  pointData,
-  pointDataId,
-  animateTripDataId,
-  replacePointData,
-  config as syncedTripConfig
-} from './data/sample-animate-trip-data';
-import sampleIconCsv from './data/sample-icon-csv';
-import sampleGpsData from './data/sample-gps-data';
-import sampleRowData, {config as rowDataConfig} from './data/sample-row-data';
-import {processCsvData, processGeojson, processRowObject} from '@kepler.gl/processors';
+import {processGeojson} from '@kepler.gl/processors';
 
 /* eslint-enable no-unused-vars */
+
+// Switch to false to hide console logs
+const DEBUG = false;
+const log = (...args) => {
+  if (DEBUG) {
+    console.log(...args);
+  }
+};
 
 // This implements the default behavior from styled-components v5
 function shouldForwardProp(propName, target) {
@@ -159,10 +149,34 @@ const StyledVerticalResizeHandle = styled(PanelResizeHandle)`
   }
 `;
 
+function exportToJson(data, filename) {
+  const jsonStr = JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonStr], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 const App = props => {
   const [showBanner, toggleShowBanner] = useState(false);
   const {params: {id, provider} = {}, location: {query = {}} = {}} = props;
   const dispatch = useDispatch();
+
+  const keplerGlState = useSelector(state => state.demo.keplerGl.map);
+
+  const _saveConfig = useCallback(() => {
+    const config = KeplerGlSchema.getConfigToSave(keplerGlState);
+    exportToJson(config, 'keplergl_config.json');
+  }, [keplerGlState]);
+
+  useEffect(() => {
+    window.saveKeplerConfig = _saveConfig;
+  }, [_saveConfig]);
 
   // TODO find another way to check for existence of duckDb plugin
   const duckDbPluginEnabled = (getApplicationConfig().plugins || []).some(p => p.name === 'duckdb');
@@ -177,55 +191,277 @@ const App = props => {
 
   const prevQueryRef = useRef<number>(null);
 
-  useEffect(() => {
-    // if we pass an id as part of the url
-    // we try to fetch along map configurations
-    const cloudProvider = CLOUD_PROVIDERS.find(c => c.name === provider);
-    if (cloudProvider) {
-      // Prevent constant reloading after change of the location
-      if (isEqual(prevQueryRef.current, {provider, id, query})) {
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  const _loadWmsData = useCallback(() => {
+    const loadWmsDataset = async (wmsUrl, datasetName) => {
+      log(`[${datasetName}] Starting to load WMS dataset...`);
+      try {
+        // 1. Fetch and parse WMS capabilities
+        log(`[${datasetName}] Fetching WMS capabilities from: ${wmsUrl}`);
+        const capabilities = await getWMSCapabilities(wmsUrl);
+        const datasetMetadata = wmsCapabilitiesToDatasetMetadata(capabilities);
+        log(`[${datasetName}] WMS capabilities received and parsed:`, capabilities);
+
+        // 2. Prepare dataset for updateVisData
+        const dataset = {
+          info: {
+            id: datasetName,
+            label: datasetName,
+            type: DatasetType.WMS_TILE
+          },
+          data: {
+            fields: [],
+            rows: []
+          },
+          metadata: {
+            type: REMOTE_TILE,
+            remoteTileFormat: RemoteTileFormat.WMS,
+            tilesetDataUrl: wmsUrl,
+            tilesetMetadataUrl: `${wmsUrl}?service=WMS&request=GetCapabilities`,
+            layers: datasetMetadata.layers || [],
+            wmsVersion: datasetMetadata.version || '1.3.0'
+          }
+        };
+
+        // 3. Dispatch action to add dataset to map
+        log(`[${datasetName}] Adding dataset to map...`);
+        dispatch(updateVisData(
+          dataset,
+          {
+            autoCreateLayers: true,
+            centerMap: true
+          }
+        ));
+
+      } catch (error) {
+        console.error(`[${datasetName}] Failed to load WMS dataset:`, error);
+      }
+    }
+
+    loadWmsDataset('https://dcm.itu.int/geoserver/dcm_prod/wms', '[SAT] ITU DCM');
+    loadWmsDataset('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', '[SAT] NASA GIBS');
+//    loadWmsDataset('https://imagery.nationalmap.gov/arcgis/services/USGSNAIPImagery/ImageServer/WMSServer', 'USGS NAIP Imagery');
+  }, [dispatch]);
+
+  const _loadGeojsonData = useCallback(() => {
+    const loadGeojsonDataset = (dataUrl, datasetName) => {
+      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+      const proxiedUrl = proxyUrl + dataUrl;
+
+      log(`[${datasetName}] Starting to load dataset...`);
+
+      fetch(proxiedUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`[${datasetName}] CORS proxy fetch failed! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(geojson => {
+          log(`[${datasetName}] Data received, dispatching addDataToMap...`);
+          dispatch(
+            addDataToMap({
+              datasets: [
+                {
+                  info: {
+                    label: datasetName,
+                    id: datasetName
+                  },
+                  data: processGeojson(geojson)
+                }
+              ],
+              options: {
+                centerMap: false
+              }
+            })
+          );
+          log(`[${datasetName}] Dataset added to map.`);
+        })
+        .catch(error => {
+          console.error(`[${datasetName}] Failed to load dataset:`, error);
+        });
+    };
+
+    // Future datasets can be added by calling loadGeojsonDataset again here
+   // loadGeojsonDataset('', '');
+    loadGeojsonDataset('https://github.com/TacticalGator/daily-dataset/releases/download/daily-latest/trx.json', 'Terrestrial Cables');
+    loadGeojsonDataset('https://github.com/TacticalGator/daily-dataset/releases/download/daily-latest/cable-geo-enriched.json', 'Submarine Cables');
+
+  }, [dispatch]);
+
+  const _loadVectorTileData = useCallback(() => {
+    const loadVectorTileDataset = async (tilesetUrl, datasetName) => {
+      log(`[${datasetName}] Starting to load dataset...`);
+      const isPmTiles = isPMTilesUrl(tilesetUrl);
+      const remoteTileFormat = isPmTiles ? RemoteTileFormat.PMTILES : RemoteTileFormat.MVT;
+      const metadataUrl = isPmTiles ? tilesetUrl : getMetaUrl(tilesetUrl);
+
+      if (!metadataUrl) {
+        console.error(`[${datasetName}] Could not determine metadata URL for`, tilesetUrl);
         return;
       }
 
-      dispatch(
-        loadCloudMap({
-          loadParams: query,
-          provider: cloudProvider,
-          onSuccess: onLoadCloudMapSuccess
-        })
-      );
-      prevQueryRef.current = {provider, id, query};
-      return;
+      try {
+        // 1. Fetch and parse metadata
+        log(`[${datasetName}] Fetching metadata from: ${metadataUrl}`);
+        const response = await fetch(metadataUrl);
+        const metadata = await response.json();
+        log(`[${datasetName}] Metadata received:`, metadata);
+
+        if (typeof metadata.json === 'string') {
+          log(`[${datasetName}] Parsing metadata.json string...`);
+          metadata.json = JSON.parse(metadata.json);
+        }
+
+        // Workaround for Kepler.gl bug where it expects `metaJson` instead of `json`
+        if (metadata.json && !metadata.metaJson) {
+          log(`[${datasetName}] Applying workaround for metaJson property...`);
+          metadata.metaJson = metadata.json;
+        }
+
+        const parsedMetadata = parseVectorMetadata(metadata, {
+          tileUrl: metadataUrl
+        });
+
+        if (!parsedMetadata) {
+          console.error(`[${datasetName}] Failed to parse metadata.`);
+          return;
+        }
+        log(`[${datasetName}] Metadata parsed successfully.`);
+
+        // 2. Infer fields if necessary
+        if (parsedMetadata.fields.length === 0) {
+          log(`[${datasetName}] Fields not found in metadata, attempting to infer from tile...`);
+          try {
+            await getFieldsFromTile({
+              remoteTileFormat,
+              tilesetUrl,
+              metadataUrl,
+              metadata: parsedMetadata
+            });
+            log(`[${datasetName}] Fields inferred successfully:`, parsedMetadata.fields);
+          } catch (e) {
+            console.error(`[${datasetName}] Error inferring fields from tile:`, e);
+          }
+        }
+
+        if (parsedMetadata.fields.length === 0) {
+          console.error(`[${datasetName}] Could not determine fields for this dataset. Cannot add to map.`);
+          return;
+        }
+
+        // 3. Prepare dataset and layer configuration
+        log(`[${datasetName}] Adding dataset to map...`);
+        dispatch(updateVisData(
+          {
+            info: {
+              id: datasetName,
+              label: datasetName,
+              type: 'vector-tile',
+              format: 'rows'
+            },
+            data: {
+              fields: parsedMetadata.fields,
+              rows: []
+            },
+            metadata: {
+              ...parsedMetadata,
+              remoteTileFormat,
+              tilesetDataUrl: tilesetUrl,
+              tilesetMetadataUrl: metadataUrl,
+            },
+            supportedFilterTypes: [
+              'real',
+              'integer',
+              'boolean'
+            ],
+            disableDataOperation: true
+          },
+          {
+            autoCreateLayers: true,
+            centerMap: true
+          }
+        ));
+
+
+      } catch (error) {
+        console.error(`[${datasetName}] Failed to load dataset:`, error);
+      }
     }
 
-    // Load sample using its id
-    if (id) {
-      dispatch(loadSampleConfigurations(id));
-    }
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/NASA%20FIRMS/{z}/{x}/{y}.pbf', 'Fire');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/USGS%20Earthquakes/{z}/{x}/{y}.pbf', 'Earthquake');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Geoconfirmed/{z}/{x}/{y}.pbf', 'Geoconfirmed');
+//    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/OpenSky%20Network/{z}/{x}/{y}.pbf', 'ADS-B');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ACLED/{z}/{x}/{y}.pbf', 'ACLED');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/UCDP/{z}/{x}/{y}.pbf', 'UCDP');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/OpenCellid/{z}/{x}/{y}.pbf', 'Cell Towers');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Stanford%20RFI%20Jamming/{z}/{x}/{y}.pbf', 'GPS Jamming');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Stanford%20RFI%20Jamming%20Event/{z}/{x}/{y}.pbf', 'GPS Jamming Event');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Stanford%20RFI%20Spoofing%20Event/{z}/{x}/{y}.pbf', 'GPS Spoofing Event');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Bellingcat%20Ukraine/{z}/{x}/{y}.pbf', 'Ukraine 2');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Global%20Fishing%20Watch%20Encounters/{z}/{x}/{y}.pbf', 'AIS Encounter');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Global%20Fishing%20Watch/{z}/{x}/{y}.pbf', 'AIS');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/OSM%20Surveillance%20Camera/{z}/{x}/{y}.pbf', 'Surveillance Camera');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/APRS-IS/{z}/{x}/{y}.pbf', 'APRS-IS');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ukrdailyupdate/{z}/{x}/{y}.pbf', 'Ukraine');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/MeshMap/{z}/{x}/{y}.pbf', 'Meshtastic');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/WRI%20Global%20Power%20Plants/{z}/{x}/{y}.pbf', 'Power Plants');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ADSBexchange/{z}/{x}/{y}.pbf', 'Air Traffic');
+    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Global%20Conflict/{z}/{x}/{y}.pbf', 'Global Conflict');
 
-    // Load map using a custom
-    if (query.mapUrl) {
-      // TODO?: validate map url
-      dispatch(loadRemoteMap({dataUrl: query.mapUrl}));
-    }
+  }, [dispatch]);
 
-    if (duckDbPluginEnabled && query.sql) {
-      dispatch(toggleMapControl('sqlPanel', 0));
-      dispatch(toggleModal(null));
-    }
-
-    // delay zs to show the banner
-    // if (!window.localStorage.getItem(BannerKey)) {
-    //   window.setTimeout(_showBanner, 3000);
-    // }
-    // load sample data
-    _loadSampleData();
-
-    // Notifications
-
-    // no dependencies, as this was part of componentDidMount
+  const _loadInitialDatasets = useCallback(() => {
+    _loadVectorTileData();
+    _loadWmsData();
+    _loadGeojsonData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [
+    dispatch,
+    _loadVectorTileData,
+    _loadWmsData,
+    _loadGeojsonData
+  ]);
+
+  useEffect(() => {
+    fetch('./keplergl_config.json')
+      .then(response => {
+        if (!response.ok) {
+          // throw error to be caught by catch block
+          throw new Error('Configuration file not found.');
+        }
+        return response.json();
+      })
+      .then(config => {
+        const parsedConfig = KeplerGlSchema.parseSavedConfig(config);
+        dispatch(receiveMapConfig(parsedConfig));
+        setConfigLoaded(true);
+      })
+      .catch(error => {
+        console.error('Error loading config:', error);
+        setConfigLoaded(true); // still set to true to allow app to load datasets
+      });
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (configLoaded) {
+
+      // Load map using a custom
+      if (query.mapUrl) {
+        // TODO?: validate map url
+        dispatch(loadRemoteMap({dataUrl: query.mapUrl}));
+      }
+
+      if (duckDbPluginEnabled && query.sql) {
+        dispatch(toggleMapControl('sqlPanel', 0));
+        dispatch(toggleModal(null));
+      }
+
+      _loadInitialDatasets();
+    }
+  }, [configLoaded, dispatch, id, provider, query, duckDbPluginEnabled, _loadInitialDatasets]);
 
   /**
    * Update map boundary when view state changes, used by ai-assistant to
@@ -270,148 +506,6 @@ const App = props => {
     Window.localStorage.setItem(BannerKey, 'true');
   }, [hideBanner]);
 
-  const _loadRowData = useCallback(() => {
-    dispatch(
-      addDataToMap({
-        datasets: [
-          {
-            info: {
-              label: 'Sample Visit Data',
-              id: 'sample_visit_data'
-            },
-            data: processRowObject(sampleRowData)
-          }
-        ],
-        config: rowDataConfig
-      })
-    );
-  }, [dispatch]);
-
-  const _loadVectorTileData = useCallback(() => {
-    const loadVectorTileDataset = async (tilesetUrl, datasetName) => {
-      console.log(`[${datasetName}] Starting to load dataset...`);
-      const isPmTiles = isPMTilesUrl(tilesetUrl);
-      const remoteTileFormat = isPmTiles ? RemoteTileFormat.PMTILES : RemoteTileFormat.MVT;
-      const metadataUrl = isPmTiles ? tilesetUrl : getMetaUrl(tilesetUrl);
-
-      if (!metadataUrl) {
-        console.error(`[${datasetName}] Could not determine metadata URL for`, tilesetUrl);
-        return;
-      }
-
-      try {
-        // 1. Fetch and parse metadata
-        console.log(`[${datasetName}] Fetching metadata from: ${metadataUrl}`);
-        const response = await fetch(metadataUrl);
-        const metadata = await response.json();
-        console.log(`[${datasetName}] Metadata received:`, metadata);
-
-        if (typeof metadata.json === 'string') {
-          console.log(`[${datasetName}] Parsing metadata.json string...`);
-          metadata.json = JSON.parse(metadata.json);
-        }
-
-        // Workaround for Kepler.gl bug where it expects `metaJson` instead of `json`
-        if (metadata.json && !metadata.metaJson) {
-          console.log(`[${datasetName}] Applying workaround for metaJson property...`);
-          metadata.metaJson = metadata.json;
-        }
-
-        const parsedMetadata = parseVectorMetadata(metadata, {
-          tileUrl: metadataUrl
-        });
-
-        if (!parsedMetadata) {
-          console.error(`[${datasetName}] Failed to parse metadata.`);
-          return;
-        }
-        console.log(`[${datasetName}] Metadata parsed successfully.`);
-
-        // 2. Infer fields if necessary
-        if (parsedMetadata.fields.length === 0) {
-          console.log(`[${datasetName}] Fields not found in metadata, attempting to infer from tile...`);
-          try {
-            await getFieldsFromTile({
-              remoteTileFormat,
-              tilesetUrl,
-              metadataUrl,
-              metadata: parsedMetadata
-            });
-            console.log(`[${datasetName}] Fields inferred successfully:`, parsedMetadata.fields);
-          } catch (e) {
-            console.error(`[${datasetName}] Error inferring fields from tile:`, e);
-          }
-        }
-
-        if (parsedMetadata.fields.length === 0) {
-          console.error(`[${datasetName}] Could not determine fields for this dataset. Cannot add to map.`);
-          return;
-        }
-
-        // 3. Prepare dataset and layer configuration
-        console.log(`[${datasetName}] Adding dataset to map...`);
-        dispatch(updateVisData(
-          {
-            info: {
-              id: datasetName,
-              label: datasetName,
-              type: 'vector-tile',
-              format: 'rows'
-            },
-            data: {
-              fields: parsedMetadata.fields,
-              rows: []
-            },
-            metadata: {
-              ...parsedMetadata,
-              remoteTileFormat,
-              tilesetDataUrl: tilesetUrl,
-              tilesetMetadataUrl: metadataUrl,
-            },
-            supportedFilterTypes: [
-              'real',
-              'integer',
-              'boolean'
-            ],
-            disableDataOperation: true
-          },
-          {
-            autoCreateLayers: true,
-            centerMap: true
-          }
-        ));
-
-
-      } catch (error) {
-        console.error(`[${datasetName}] Failed to load dataset:`, error);
-      }
-    }
-
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ukrdailyupdate/{z}/{x}/{y}.pbf', 'Ukraine');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/MeshMap/{z}/{x}/{y}.pbf', 'Meshtastic');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/WRI%20Global%20Power%20Plants/{z}/{x}/{y}.pbf', 'Power Plants');
-  }, [dispatch]);
-
-  const _loadSampleData = useCallback(() => {
-    _loadVectorTileData();
-    // _loadPointData();
-    // _loadGeojsonData();
-    // _loadTripGeoJson();
-    // _loadIconData();
-    // _loadH3HexagonData();
-    // _loadS2Data();
-    // _loadScenegraphLayer();
-    // _loadGpsData();
-    // _loadRowData();
-    // _loadVectorTileData();
-    // _loadSyncedFilterWTripLayer();
-    // _replaceSyncedFilterWTripLayer();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    dispatch,
-    _loadVectorTileData
-  ]);
-
   return (
     <StyleSheetManager shouldForwardProp={shouldForwardProp}>
       <ThemeProvider theme={theme}>
@@ -440,15 +534,12 @@ const App = props => {
                       <AutoSizer>
                         {({height, width}) => (
                           <KeplerGl
-                            mapboxApiAccessToken={CLOUD_PROVIDERS_CONFIGURATION.MAPBOX_TOKEN}
+                            mapboxApiAccessToken={process.env.MAPBOX_ACCESS_TOKEN || CLOUD_PROVIDERS_CONFIGURATION.MAPBOX_TOKEN}
                             id="map"
                             getState={keplerGlGetState}
                             width={width}
                             height={height}
-                            cloudProviders={CLOUD_PROVIDERS}
                             localeMessages={messages}
-                            onExportToCloudSuccess={onExportFileSuccess}
-                            onLoadCloudMapSuccess={onLoadCloudMapSuccess}
                             featureFlags={DEFAULT_FEATURE_FLAGS}
                             onViewStateChange={onViewStateChange}
                           />

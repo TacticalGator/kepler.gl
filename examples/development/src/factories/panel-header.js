@@ -26,7 +26,13 @@ export function CustomPanelHeaderFactory(...deps) {
         tooltip: 'User Guide',
         onClick: () => {}
       },
-      defaultActionItems.find(item => item.id === 'storage'),
+      {
+        id: 'config',
+        iconComponent: Icons.Save2,
+        onClick: () => window.saveKeplerConfig && window.saveKeplerConfig(),
+        label: null,
+        tooltip: 'Save Config'
+      },
       {
         ...defaultActionItems.find(item => item.id === 'save'),
         label: null,

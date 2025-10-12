@@ -21,6 +21,7 @@ const reducers = combineReducers({
 
 export const middlewares = enhanceReduxMiddleware([thunk, routerMiddleware(browserHistory)]);
 
+/*
 if (NODE_ENV === 'local') {
   // Redux logger
   const logger = createLogger({
@@ -28,6 +29,7 @@ if (NODE_ENV === 'local') {
   });
   middlewares.push(logger);
 }
+*/
 
 export const enhancers = [applyMiddleware(...middlewares)];
 
@@ -40,6 +42,7 @@ let composeEnhancers = compose;
  * comment out code below to enable Redux Devtools
  */
 
+
 if (Window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__) {
   composeEnhancers = Window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__({
     actionsBlacklist: [
@@ -49,5 +52,6 @@ if (Window.__REDUX_DEVTOOLS_EXTENSION_COMPOSE__) {
     ]
   });
 }
+
 
 export default createStore(reducers, initialState, composeEnhancers(...enhancers));

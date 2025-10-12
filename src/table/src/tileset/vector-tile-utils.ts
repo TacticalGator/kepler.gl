@@ -528,6 +528,24 @@ export function getFilterProps(
       return filterProps;
     }
 
+    case ALL_FIELD_TYPES.timestamp: {
+      const [min, max] = getAttributeDomain(fieldType, attribute);
+      const domain: [number, number] = [min, max];
+      const diff = max - min;
+      // TODO: better step detection
+      const step = getNumericStepSize(diff) || 0.1;
+      const filterProps: any = {
+        domain,
+        value: domain,
+        type: FILTER_TYPES.timeRange,
+        typeOptions: [FILTER_TYPES.timeRange],
+        gpu: true,
+        step,
+        mappedValue: null
+      };
+      return filterProps;
+    }
+
     case ALL_FIELD_TYPES.boolean: {
       // Represent boolean as numeric range [0,1] to enable GPU filtering for vector tiles
       const domain: [number, number] = [0, 1];
@@ -561,6 +579,24 @@ function attributeToField(attribute: TippecanoeLayerAttribute = {values: []}): V
   // max: 0.95
   // min: 0.24375
   // type: "number"
+
+  if (
+    (attribute.attribute === 'timestamp' || attribute.attribute === 'ingested_at') &&
+    attribute.type === 'number'
+  ) {
+    const fieldTypes = {
+      type: ALL_FIELD_TYPES.timestamp,
+      analyzerType: ANALYZER_DATA_TYPES.DATETIME
+    };
+    return {
+      name: attribute.attribute as string,
+      id: attribute.attribute as string,
+      format: 'x',
+      filterProps: getFilterProps(fieldTypes.type, attribute),
+      ...fieldTypes
+    };
+  }
+
   const fieldTypes = attributeTypeToFieldType(attribute.type);
   return {
     name: attribute.attribute as string,
@@ -575,6 +611,7 @@ function getAttributeDomain(type: string | null, attribute: TippecanoeLayerAttri
   switch (type) {
     case ALL_FIELD_TYPES.real:
     case ALL_FIELD_TYPES.integer:
+    case ALL_FIELD_TYPES.timestamp:
       return [
         Number.isFinite(attribute.min) ? (attribute.min as number) : NaN,
         Number.isFinite(attribute.max) ? (attribute.max as number) : NaN

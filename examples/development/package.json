@@ -12,8 +12,6 @@
     "start:local-hubble-src": "NODE_ENV=local node esbuild.config.mjs --start --env.hubble_src"
   },
   "dependencies": {
-    "@auth0/auth0-spa-js": "^2.1.2",
-    "@carto/toolkit": "0.0.1-rc.18",
     "@emotion/is-prop-valid": "^1.2.1",
     "@kepler.gl/actions": "^3.2.0",
     "@kepler.gl/ai-assistant": "^3.2.0",
@@ -38,7 +36,6 @@
     "apache-arrow": ">=15.0.0",
     "classnames": "^2.2.1",
     "d3-format": "^2.0.0",
-    "dropbox": "^4.0.12",
     "esbuild": "^0.25.0",
     "global": "^4.3.0",
     "keymirror": "^0.1.1",

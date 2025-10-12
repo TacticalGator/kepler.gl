@@ -94,7 +94,8 @@ import {
   SORT_ORDER,
   SYNC_TIMELINE_MODES,
   CHANNEL_SCALES,
-  SCALE_TYPES
+  SCALE_TYPES,
+  ALL_FIELD_TYPES
 } from '@kepler.gl/constants';
 import {LAYER_ID_LENGTH, Layer, LayerClasses} from '@kepler.gl/layers';
 import {
@@ -1316,7 +1317,7 @@ function _removeFilterDataIdAtValueIndex(filter, valueIndex, datasets) {
   };
 }
 
-/** *
+/** * 
  * Updates a single property of a filter
  */
 function _updateFilterProp(state, filter, prop, value, valueIndex, datasetIds?) {
@@ -2507,7 +2508,7 @@ function postMergeUpdater(mergedState: VisState, postMergerPayload: PostMergerPa
       ...accu,
       [id]: mergedState.datasets[id]
     }),
-    {}
+    {} as Datasets
   );
 
   if (!newLayers.length && (options || {}).autoCreateLayers !== false) {
@@ -3063,7 +3064,7 @@ export function updateAnimationDomain<S extends VisState>(state: S): S {
     animatableLayers.reduce((accu, layer) => {
       accu.push(...(layer.config.animation.timeSteps || []));
       return accu;
-    }, [])
+    }, [] as number[])
   ).sort();
 
   mergedTimeSteps = mergedTimeSteps.length ? mergedTimeSteps : null;
@@ -3524,7 +3525,7 @@ export function layerFilteredItemsChangeUpdater<S extends VisState>(
 }
 
 /**
- * Update WMS feature info and pin tooltip
+ * Update WMS feature info and tooltip
  */
 export function wmsFeatureInfoUpdater<S extends VisState>(
   state: S,
@@ -3726,7 +3727,8 @@ export function setTimeFilterTimelineModeUpdater<S extends VisState>(
  */
 export const setLoadingIndicatorUpdater = (
   state: VisState,
-  {payload: {change}}: {payload: SetLoadingIndicatorPayload}
+  {payload: {change}}:
+    {payload: SetLoadingIndicatorPayload}
 ): VisState => {
   let {loadingIndicatorValue} = state;
   if (!loadingIndicatorValue) {

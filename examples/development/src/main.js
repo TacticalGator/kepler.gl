@@ -9,18 +9,13 @@ import {browserHistory, Router, Route} from 'react-router';
 import {syncHistoryWithStore} from 'react-router-redux';
 import store from './store';
 import App from './app';
-import {buildAppRoutes} from './utils/routes';
 
 const history = syncHistoryWithStore(browserHistory, store);
-
-const appRoute = buildAppRoutes(App);
 
 const Root = () => (
   <Provider store={store}>
     <Router history={history}>
-      <Route path="/" component={App}>
-        {appRoute}
-      </Route>
+      <Route path="/" component={App} />
     </Router>
   </Provider>
 );

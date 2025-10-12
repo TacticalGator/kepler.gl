@@ -472,7 +472,16 @@ export function getFilterFunction<L extends {config: {dataId: string | null}; id
       if (!field) {
         return defaultFunc;
       }
-      const mappedValue = get(field, ['filterProps', 'mappedValue']);
+      console.log('--- DEBUG: getFilterFunction (timeRange) ---');
+      console.log('Field object:', field);
+      console.log('Does field.filterProps exist?', Object.prototype.hasOwnProperty.call(field, 'filterProps'));
+      if (field.filterProps) {
+        console.log('Does field.filterProps.mappedValue exist?', Object.prototype.hasOwnProperty.call(field.filterProps, 'mappedValue'));
+        console.log('Value of field.filterProps.mappedValue:', field.filterProps.mappedValue);
+      }
+
+      const mappedValue = field.filterProps ? field.filterProps.mappedValue : undefined;
+
       const accessor = Array.isArray(mappedValue)
         ? data => mappedValue[data.index]
         : data => timeToUnixMilli(valueAccessor(data), field.format);

@@ -56,13 +56,7 @@ const getThirdPartyLibraryAliases = useKeplerNodeModules => {
 // Env variables required for demo app
 const requiredEnvVariables = [
   'MapboxAccessToken',
-  'DropboxClientId',
-  'MapboxExportToken',
-  'CartoClientId',
-  'FoursquareClientId',
-  'FoursquareDomain',
-  'FoursquareAPIURL',
-  'FoursquareUserMapsURL'
+  'MapboxExportToken'
 ];
 
 /**

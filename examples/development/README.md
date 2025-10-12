@@ -34,12 +34,7 @@ Then update the following environment variables in your `.env` file:
 
 ```sh
 MAPBOX_ACCESS_TOKEN=<your_mapbox_token>
-DROPBOX_CLIENT_ID=<your_dropbox_client_id>
 MAPBOX_EXPORT_TOKEN=<your_mapbox_export_token>
-CARTO_CLIENT_ID=<your_carto_client_id>
-FOURSQUARE_CLIENT_ID=<your_foursquare_client_id>
-FOURSQUARE_DOMAIN=<your_foursquare_domain>
-FOURSQUARE_USER_MAPS_URL=<your_foursquare_user_map_url>
 ```
 
 #### 3. Start the app

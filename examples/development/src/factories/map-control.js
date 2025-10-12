@@ -12,7 +12,7 @@ import {
 } from '@kepler.gl/components';
 import {AiAssistantControlFactory} from '@kepler.gl/ai-assistant';
 
-import {BannerMapPanel, SampleMapPanel} from '../components/map-control/map-control';
+import {BannerMapPanel} from '../components/map-control/map-control';
 import SqlPanelControlFactory from '../components/map-control/sql-panel-control';
 
 const StyledMapControlPanel = styled.div`
@@ -83,7 +83,6 @@ function CustomMapControlFactory(
       <StyledMapControlOverlay top={props.top} rightPanelVisible={showEffects}>
         <StyledMapControlPanel>
           {<BannerMapPanel {...props} />}
-          {!props.isExport && props.currentSample ? <SampleMapPanel {...props} /> : null}
           <MapControl {...props} top={0} actionComponents={actionComponents} />
         </StyledMapControlPanel>
         <StyledMapControlContextPanel>

@@ -115,7 +115,7 @@ yarn start
 
 An demo app will be served at `http://localhost:8080/`
 
-This is the demo app we hosted on [http://kepler.gl/#/demo][demo-app]. By default, it serves non-minified source code inside the src directory.
+This is the demo app we hosted on [http://kepler.gl/#/demo][development-app]. By default, it serves non-minified source code inside the src directory.
 
 #### Develop with deck.gl
 

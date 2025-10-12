@@ -198,7 +198,17 @@ class KeplerTable<F extends Field = Field> {
       ...metadata
     };
 
-    this.supportedFilterTypes = supportedFilterTypes;
+    if (datasetInfo.type === 'vector-tile') {
+      this.supportedFilterTypes = [
+        ALL_FIELD_TYPES.real,
+        ALL_FIELD_TYPES.integer,
+        ALL_FIELD_TYPES.boolean,
+        ALL_FIELD_TYPES.string,
+        ALL_FIELD_TYPES.timestamp
+      ];
+    } else {
+      this.supportedFilterTypes = supportedFilterTypes;
+    }
     this.disableDataOperation = disableDataOperation;
 
     this.dataContainer = createDataContainer([]);
