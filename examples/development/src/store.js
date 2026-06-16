@@ -21,15 +21,16 @@ const reducers = combineReducers({
 
 export const middlewares = enhanceReduxMiddleware([thunk, routerMiddleware(browserHistory)]);
 
-/*
+
 if (NODE_ENV === 'local') {
+//if (true) {
   // Redux logger
   const logger = createLogger({
     collapsed: () => true // Collapse all actions for more compact log
   });
   middlewares.push(logger);
 }
-*/
+
 
 export const enhancers = [applyMiddleware(...middlewares)];
 

@@ -61,12 +61,12 @@ const KeplerGl = require('@kepler.gl/components').injectComponents([
 ]);
 
 /* eslint-disable no-unused-vars */
-import {processGeojson} from '@kepler.gl/processors';
+import {processGeojson, processCsvData} from '@kepler.gl/processors';
 
 /* eslint-enable no-unused-vars */
 
 // Switch to false to hide console logs
-const DEBUG = false;
+const DEBUG = true;
 const log = (...args) => {
   if (DEBUG) {
     console.log(...args);
@@ -239,15 +239,33 @@ const App = props => {
       }
     }
 
-    loadWmsDataset('https://dcm.itu.int/geoserver/dcm_prod/wms', '[SAT] ITU DCM');
-    loadWmsDataset('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', '[SAT] NASA GIBS');
-//    loadWmsDataset('https://imagery.nationalmap.gov/arcgis/services/USGSNAIPImagery/ImageServer/WMSServer', 'USGS NAIP Imagery');
+//  Add WMS datasets below
+//    loadWmsDataset('', '');
+
+//  Sentinel Series
+//  All-weather radar (Sentinel-1)
+//  High-resolution optical (Sentinel-2)
+//  Ocean, land, and atmospheric biophysical data (Sentinel-3)
+//  Air quality and trace gases (Sentinel-5P)
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/51d1f5b6-f1d7-4c49-acfc-70dfb8fa84e0', 'Copernicus DEM');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/1ffd71ef-3953-4da4-a4d8-f87453144f59', 'Sentinel-1 GRD');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/955e9f7f-262d-427c-8776-8ff20a7ca0da', 'Sentinel-2 L1C');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/213414a3-1fc8-47f4-8330-37682bebb388', 'Sentinel-2 L2A');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/a048bdd3-ffde-4de3-9c40-e5ea664c9a6a', 'Sentinel-3 OLCI L1');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/1db0bc0d-da44-46f9-b3b8-4032aaa0ea84', 'Sentinel-3 OLCI L2');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/da25aa31-86fb-45cf-9beb-adddbeb5bf09', 'Sentinel-3 SLSTR');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/7e258aba-7395-42a5-9cdf-1e2e359a7681', 'Sentinel-3 SYN L2');
+    loadWmsDataset('https://sh.dataspace.copernicus.eu/ogc/wms/00278a81-04f0-44f5-aa8b-7bf9c177412e', 'Sentinel-5P (TROPOMI)');
+
+    loadWmsDataset('https://dcm.itu.int/geoserver/dcm_prod/wms', 'ITU DCM');
+    loadWmsDataset('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', 'NASA GIBS');
+
   }, [dispatch]);
 
   const _loadGeojsonData = useCallback(() => {
     const loadGeojsonDataset = (dataUrl, datasetName) => {
-      const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-      const proxiedUrl = proxyUrl + dataUrl;
+      const proxyUrl = 'https://cors-proxy.tacticalgator1.workers.dev/';
+      const proxiedUrl = `${proxyUrl}?dataUrl=${encodeURIComponent(dataUrl)}`;
 
       log(`[${datasetName}] Starting to load dataset...`);
 
@@ -285,8 +303,54 @@ const App = props => {
 
     // Future datasets can be added by calling loadGeojsonDataset again here
    // loadGeojsonDataset('', '');
+    loadGeojsonDataset('https://github.com/TacticalGator/daily-dataset/releases/download/daily-latest/seaports.json', 'Sea Ports');
     loadGeojsonDataset('https://github.com/TacticalGator/daily-dataset/releases/download/daily-latest/trx.json', 'Terrestrial Cables');
     loadGeojsonDataset('https://github.com/TacticalGator/daily-dataset/releases/download/daily-latest/cable-geo-enriched.json', 'Submarine Cables');
+
+  }, [dispatch]);
+
+  const _loadCsvData = useCallback(() => {
+    const loadCsvDataset = (dataUrl, datasetName) => {
+      const proxyUrl = 'https://cors-proxy.tacticalgator1.workers.dev/';
+      const proxiedUrl = `${proxyUrl}?dataUrl=${encodeURIComponent(dataUrl)}`;
+
+      log(`[${datasetName}] Starting to load dataset...`);
+
+      fetch(proxiedUrl)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`[${datasetName}] CORS proxy fetch failed! status: ${response.status}`);
+          }
+          return response.text();
+        })
+        .then(csv => {
+          log(`[${datasetName}] Data received, dispatching addDataToMap...`);
+          dispatch(
+            addDataToMap({
+              datasets: [
+                {
+                  info: {
+                    label: datasetName,
+                    id: datasetName
+                  },
+                  data: processCsvData(csv)
+                }
+              ],
+              options: {
+                centerMap: false
+              }
+            })
+          );
+          log(`[${datasetName}] Dataset added to map.`);
+        })
+        .catch(error => {
+          console.error(`[${datasetName}] Failed to load dataset:`, error);
+        });
+    };
+
+    // Future datasets can be added by calling loadCsvDataset again here
+    // loadCsvDataset('', '');
+    loadCsvDataset('https://github.com/TacticalGator/daily-dataset/releases/download/daily-latest/airports.csv', 'Airports');
 
   }, [dispatch]);
 
@@ -390,26 +454,37 @@ const App = props => {
       }
     }
 
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/NASA%20FIRMS/{z}/{x}/{y}.pbf', 'Fire');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/USGS%20Earthquakes/{z}/{x}/{y}.pbf', 'Earthquake');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Geoconfirmed/{z}/{x}/{y}.pbf', 'Geoconfirmed');
-//    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/OpenSky%20Network/{z}/{x}/{y}.pbf', 'ADS-B');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ACLED/{z}/{x}/{y}.pbf', 'ACLED');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/UCDP/{z}/{x}/{y}.pbf', 'UCDP');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/OpenCellid/{z}/{x}/{y}.pbf', 'Cell Towers');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Stanford%20RFI%20Jamming/{z}/{x}/{y}.pbf', 'GPS Jamming');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Stanford%20RFI%20Jamming%20Event/{z}/{x}/{y}.pbf', 'GPS Jamming Event');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Stanford%20RFI%20Spoofing%20Event/{z}/{x}/{y}.pbf', 'GPS Spoofing Event');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Bellingcat%20Ukraine/{z}/{x}/{y}.pbf', 'Ukraine 2');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Global%20Fishing%20Watch%20Encounters/{z}/{x}/{y}.pbf', 'AIS Encounter');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Global%20Fishing%20Watch/{z}/{x}/{y}.pbf', 'AIS');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/OSM%20Surveillance%20Camera/{z}/{x}/{y}.pbf', 'Surveillance Camera');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/APRS-IS/{z}/{x}/{y}.pbf', 'APRS-IS');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ukrdailyupdate/{z}/{x}/{y}.pbf', 'Ukraine');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/MeshMap/{z}/{x}/{y}.pbf', 'Meshtastic');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/WRI%20Global%20Power%20Plants/{z}/{x}/{y}.pbf', 'Power Plants');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/ADSBexchange/{z}/{x}/{y}.pbf', 'Air Traffic');
-    loadVectorTileDataset('https://10.1.1.36/api/kepler_tiles/Global%20Conflict/{z}/{x}/{y}.pbf', 'Global Conflict');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/NASA%20FIRMS/{z}/{x}/{y}.pbf', 'Fire');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/USGS%20Earthquakes/{z}/{x}/{y}.pbf', 'Earthquake');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Geoconfirmed/{z}/{x}/{y}.pbf', 'Geoconfirmed');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/ACLED/{z}/{x}/{y}.pbf', 'ACLED');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/UCDP/{z}/{x}/{y}.pbf', 'UCDP');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/OpenCellid/{z}/{x}/{y}.pbf', 'Cell Towers');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Stanford%20RFI%20Jamming/{z}/{x}/{y}.pbf', 'GPS Jamming');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Stanford%20RFI%20Jamming%20Event/{z}/{x}/{y}.pbf', 'GPS Jamming Event');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Stanford%20RFI%20Spoofing%20Event/{z}/{x}/{y}.pbf', 'GPS Spoofing Event');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Bellingcat%20Ukraine/{z}/{x}/{y}.pbf', 'Ukraine 2');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Global%20Fishing%20Watch%20Encounters/{z}/{x}/{y}.pbf', 'AIS Encounter');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Global%20Fishing%20Watch/{z}/{x}/{y}.pbf', 'AIS');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Global%20Fishing%20Watch%20Offshore%20Infrastructures/{z}/{x}/{y}.pbf', 'Offshore Infrastructure');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/OSM%20Surveillance%20Camera/{z}/{x}/{y}.pbf', 'Surveillance Camera');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/APRS-IS/{z}/{x}/{y}.pbf', 'APRS-IS');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/ukrdailyupdate/{z}/{x}/{y}.pbf', 'Ukraine');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/MeshMap/{z}/{x}/{y}.pbf', 'Meshtastic');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/WRI%20Global%20Power%20Plants/{z}/{x}/{y}.pbf', 'Power Plants');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/ADSBexchange/{z}/{x}/{y}.pbf', 'Air Traffic');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/UNHCR%20PoC/{z}/{x}/{y}.pbf', 'UNHCR People of Concern');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/UNHCR%20Presence/{z}/{x}/{y}.pbf', 'UNHCR Presence');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/UNHCR%20Border%20Crossing/{z}/{x}/{y}.pbf', 'UNHCR Border Crossing');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/eyesonrussia/{z}/{x}/{y}.pbf', 'EyesOnRussia');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/GDELT/{z}/{x}/{y}.pbf', 'GDELT');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/GTTAC/{z}/{x}/{y}.pbf', 'GTTAC');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/PeeringDB/{z}/{x}/{y}.pbf', 'Data Centers');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/CrimeMapping/{z}/{x}/{y}.pbf', 'US Reported Crimes');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/Communitycrimemap/{z}/{x}/{y}.pbf', 'US Reported Crimes 2');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/rx-tx/{z}/{x}/{y}.pbf', 'SDR Stations');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/OSM%20Power%20Nodes/{z}/{x}/{y}.pbf', 'Power Nodes');
+    loadVectorTileDataset('https://api.tacticalgator.net/api/kepler_tiles/OSM%20Power%20Grids/{z}/{x}/{y}.pbf', 'Power Grids');
 
   }, [dispatch]);
 
@@ -417,12 +492,14 @@ const App = props => {
     _loadVectorTileData();
     _loadWmsData();
     _loadGeojsonData();
+    _loadCsvData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     dispatch,
     _loadVectorTileData,
     _loadWmsData,
-    _loadGeojsonData
+    _loadGeojsonData,
+    _loadCsvData
   ]);
 
   useEffect(() => {
