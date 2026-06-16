@@ -43,3 +43,7 @@ npm-debug.log
 .netlify
 meta.json
 .env
+
+
+# dev
+examples/development/
